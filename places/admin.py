@@ -11,11 +11,15 @@ class ImageInline(SortableInlineAdminMixin, admin.TabularInline):
     readonly_fields = ['image_preview']
     
     def image_preview(self, obj):
-        return mark_safe(f'<img src="{obj.image.url}" width="200" />')
+        if obj.image:
+            return mark_safe(f'<img src="{obj.image.url}" width="200" />')
+        return "Нет изображения"
     
     image_preview.short_description = "Превью"
 
-class PlaceAdmin(admin.ModelAdmin):
+
+class PlaceAdmin(SortableAdminBase, admin.ModelAdmin):
+    list_display = ['title', 'place_id', 'lat', 'lng']
     inlines = [ImageInline]
     
 
