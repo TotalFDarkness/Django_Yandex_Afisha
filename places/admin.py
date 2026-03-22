@@ -21,6 +21,7 @@ class ImageInline(SortableInlineAdminMixin, admin.TabularInline):
 class PlaceAdmin(SortableAdminBase, admin.ModelAdmin):
     list_display = ['title', 'place_id', 'lat', 'lng']
     inlines = [ImageInline]
+    search_fields = ['title']
     
 
 admin.site.register(Place, PlaceAdmin)
