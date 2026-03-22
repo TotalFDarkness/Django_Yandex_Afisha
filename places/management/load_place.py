@@ -1,8 +1,8 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 import requests
 from places.models import Place, Image
-from io import BytesIO
-from django.core.files import File
+from requests.exceptions import RequestException
+from django.core.files.base import ContentFile
 
 
 class Command(BaseCommand):
@@ -17,17 +17,28 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         json_url = options['json_url']
-        response = requests.get(json_url)
-        response.raise_for_status()
-        place_property = response.json()
+        try:
+            response = requests.get(json_url, timeout=10)
+            response.raise_for_status()
+            place_property = response.json()
+        except RequestException as e:
+            raise CommandError(f'Ошибка загрузки JSON: {str(e)}')
+        except ValueError:
+            raise CommandError('Некорректный формат JSON')
 
-        place, _ = self.create_place(place_property)
-
-        self.load_images(place, place_property['imgs'])
+        try:
+            place, created = self.create_place(place_property)
+            if created:
+                try:
+                    self.load_images(place, place_property['imgs'])
+                except RequestException as e:
+                    raise CommandError(f'Ошибка загрузки изображений: {str(e)}')
+        except (KeyError, ValueError) as e:
+            raise CommandError(f'Ошибка сохранения места: {str(e)}')
 
     def create_place(self, property):
         return Place.objects.get_or_create(
-            place_id=property.get('place_id', self.generate_place_id(property['title'])),
+            title=property['title'],
             defaults={
                 'title': property['title'],
                 'description_short': property.get('description_short', ''),
@@ -38,19 +49,21 @@ class Command(BaseCommand):
         )
 
     def load_images(self, place, image_urls):
-
-        for image_url in image_urls:
+        for position, image_url in enumerate(image_urls, start=1):
             response = requests.get(image_url)
             response.raise_for_status()
-            img_file = BytesIO(response.content)
 
             img_name = self.extract_filename(image_url)
-            image = Image(place=place)
-            image.image.save(img_name, File(img_file))
-            image.save()
+            img_content = ContentFile(
+                response.content,
+                name=img_name
+            )
+
+            Image.objects.create(
+                place=place,
+                image=img_content,
+                position=position
+            )
 
     def extract_filename(self, url):
         return url.split('/')[-1].split('?')[0]
-
-    def generate_place_id(self, title):
-        return title.lower().replace(' ', '-')
